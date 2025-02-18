@@ -2,7 +2,7 @@ import torch
 from torch.utils.data import DataLoader, random_split
 
 # Import utility functions from a separate module (ensure these are well-defined)
-from utils import load_data_from_db, preprocess_data, get_features, RoutesDataset, SimpleMLPRegression, initialize_database_if_needed
+from utils import load_data_from_db, preprocess_data, get_features, RoutesDataset, SimpleMLPRegression, ClimbingModelConfig, initialize_database_if_needed
 
 # Constants (make these configurable via command-line arguments or config file)
 BATCH_SIZE = 128
@@ -33,6 +33,11 @@ def load_and_preprocess_data():
 
 def create_datasets_and_loaders(routes, routes_l1):
     """Create datasets and dataloaders."""
+    print("Routes shape:", routes.shape)
+    print("Routes flattened shape:", routes.reshape(routes.shape[0], -1).shape)
+    print("Routes_l1 length:", len(routes_l1))
+    print("Routes_l1 columns:", list(routes_l1.columns))
+
     print("Creating dataset")
     full_dataset = RoutesDataset(routes, routes_l1['difficulty_average'].values, routes_l1['angle'].values)
 
@@ -52,7 +57,10 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"""Input size: {routes.shape[1]}""")
-    model = SimpleMLPRegression(routes.shape[1]).to(device) # Use routes shape here
+
+    # Create a configuration for the model
+    config = ClimbingModelConfig(input_size=routes.shape[1])
+    model = SimpleMLPRegression(config).to(device)
 
     # Training arguments for Hugging Face Trainer
     training_args = TrainingArguments(
@@ -70,13 +78,11 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
         remove_unused_columns=False
     )
 
-    # Define a custom compute_metrics function (highly recommended)
+    # Define a custom compute_metrics function
     def compute_metrics(eval_pred):
-        predictions, labels = eval_pred
-        # Calculate metrics using scikit-learn or other libraries
-        # Example using MSE:
-        mse = ((predictions - labels)**2).mean()
-        return {"mse": mse} # return a dictionary of metrics
+        predictions, labels = eval_pred.predictions, eval_pred.label_ids
+        mse = ((predictions.squeeze() - labels)**2).mean()
+        return {"mse": mse}
 
     # Initialize the Trainer
     trainer = Trainer(
@@ -85,20 +91,22 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
         compute_metrics=compute_metrics,
+        data_collator=lambda features: {
+            "input_ids": torch.stack([f["input_ids"] for f in features]),
+            "labels": torch.tensor([f["labels"] for f in features])
+        }
     )
 
     # Train the model
     trainer.train()
 
-    # Save the best model (already done by the Trainer)
-    # trainer.save_model("best_model")  # No need to call save_model manually
+    # Save the best model in Hugging Face format
+    trainer.save_model("./my_climbing_model")
+    print("Model saved successfully to ./my_climbing_model")
 
-    # Evaluate the model (can also be done with trainer.evaluate())
+    # Evaluate the model
     metrics = trainer.evaluate()
     print(metrics)
-
-    # Plot losses (you might need to extract them from the trainer logs if you want to plot them manually)
-    # trainer.plot_losses() will plot the losses if you have configured logging correctly.
 
     return trainer # return the trainer object
 
@@ -118,9 +126,6 @@ if __name__ == "__main__":
     best_model = trainer.model
     # You can now use best_model for inference or save it in a different format (e.g., ONNX)
 
-    # Example: Save the model in Hugging Face format
-    best_model.save_pretrained("./my_climbing_model") # Saves the model and tokenizer (if applicable)
-
-    # You can now push your model to the Hugging Face Hub:
-    # from huggingface_hub import push_to_hub
-    # best_model.push_to_hub("my_climbing_model") # Requires you to be logged in to Hugging Face
+    # Example: Save the model in PyTorch format
+    torch.save(best_model.state_dict(), "./my_climbing_model.pth")
+    print("Model saved successfully to ./my_climbing_model.pth")

@@ -1,3 +1,16 @@
+# Project specific ignores
+*.db
+*.sqlite
+*.pypirc
+results/    
+
+# Virtualenv    
+.venv/
+env/
+env.bak/
+venv/
+venv.bak/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
@@ -5,6 +18,16 @@ __pycache__/
 
 # C extensions
 *.so
+# TensorFlow/PyTorch/Model-specific
+data/       # Your large training data (should NOT be in your repo)
+checkpoints/ # Model checkpoints (unless you *intend* to include a specific one)
+runs/        # TensorBoard logs, experiment tracking
+outputs/     # Model outputs, predictions, generated data
+*.h5        # Keras/TensorFlow HDF5 model files (usually too large)
+*.ckpt*     # TensorFlow checkpoint files
+*.pt        # PyTorch model files (unless *intentionally* including a small, final one)
+*.pth       # PyTorch model files
+*.onnx      # ONNX model files (if exported)
 
 # Distribution / packaging
 .Python
@@ -172,5 +195,3 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
-
-*.db
