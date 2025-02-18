@@ -33,14 +33,14 @@ def load_data_from_db():
     INNER JOIN placements ON placements.hole_id = holes.id
     WHERE placements.layout_id = ?
     """
-    
+
     with sqlite3.connect(DB_PATH) as conn:
         holes_df = pd.read_sql_query(sql, conn, params=(LAYOUT_ID,))
         routes_df = pd.read_sql_query("SELECT * FROM climbs", conn)
         routes_grade_df = pd.read_sql_query("SELECT * FROM climb_stats", conn)
         grade_comparision_df = pd.read_sql_query("SELECT * FROM difficulty_grades", conn)
 
-    
+
     return holes_df, routes_df, routes_grade_df, grade_comparision_df
 
 
@@ -60,8 +60,8 @@ def preprocess_data(routes_df, routes_grade_df, min_ascents = MIN_ASCENTS):
 
 def get_features(routes_l1, holes_df, size=(177, 185)):
     """Generate feature matrix from route frames and hole positions."""
-    num_routes = len(routes_l1['frames'])
-    
+    #num_routes = len(routes_l1['frames'])
+
     # Initialize an empty list to store the route matrices
     route_matrices = []
 
@@ -96,7 +96,7 @@ def get_features(routes_l1, holes_df, size=(177, 185)):
     for route in routes_matrix:
         cropped_route = route[non_empty_rows][:, non_empty_cols]
         cropped_routes.append(cropped_route)
-    
+
     # Convert cropped routes to numpy array
     placeholder_matrix = np.array(cropped_routes)
 
@@ -110,7 +110,7 @@ class SimpleMLPRegression(nn.Module):
         self.fc1 = nn.Linear(input_size, 516)
         self.fc2 = nn.Linear(516, 256)
         self.fc3 = nn.Linear(256, 1)
-    
+
     def forward(self, x):
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))
@@ -118,18 +118,16 @@ class SimpleMLPRegression(nn.Module):
 
 class RoutesDataset(Dataset):
     def __init__(self, features, labels, angle):
-
-        self.features = features.reshape(features.shape[0], -1) # Flatten each image/route
-        self.labels = labels
-        self.angle = angle.reshape(-1, 1)
+        self.features = features.reshape(features.shape[0], -1).astype(np.float32) # Convert to float32 numpy array
+        self.labels = labels.astype(np.float32) # Convert to float32 numpy array
+        self.angle = angle.reshape(-1, 1).astype(np.float32) # Convert to float32 numpy array
         self.scaler = StandardScaler()
 
-        # Concatenate features and angle before scaling
         combined_data = np.hstack([self.features, self.angle])
-        self.features = self.scaler.fit_transform(combined_data)[:, :-1] # Scale, then remove the angle column
+        self.features = self.scaler.fit_transform(combined_data)[:, :-1] # Scaling
 
     def __len__(self):
         return len(self.features)
 
     def __getitem__(self, index):
-        return torch.tensor(self.features[index], dtype=torch.double), torch.tensor(self.labels[index], dtype=torch.double)
+        return {"x": torch.tensor(self.features[index], dtype=torch.float), "label": torch.tensor(self.labels[index], dtype=torch.float)} # Changed to x and label

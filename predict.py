@@ -4,7 +4,6 @@ import sys
 import numpy as np
 from sklearn.preprocessing import StandardScaler
 import math
-import pandas as pd  # Import pandas explicitly
 
 from utils import load_data_from_db, preprocess_data, get_features, SimpleMLPRegression, initialize_database_if_needed
 
@@ -28,7 +27,7 @@ def preprocess_and_extract_features():
     """Load, preprocess data, and extract features."""
     print("Loading data")
     holes_df, routes_df, routes_grade_df, grade_comparision_df = load_data_from_db()
-    
+
     # Check if the dataframes are empty after the database call
     if holes_df.empty or routes_df.empty or routes_grade_df.empty or grade_comparision_df.empty:
         print("Error: One or more dataframes are empty after loading from the database. Check the database connection and data.")

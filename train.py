@@ -1,10 +1,5 @@
 import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset, DataLoader, random_split
-from tqdm import tqdm
-import matplotlib.pyplot as plt
-import pandas as pd  # Import pandas explicitly
+from torch.utils.data import DataLoader, random_split
 
 # Import utility functions from a separate module (ensure these are well-defined)
 from utils import load_data_from_db, preprocess_data, get_features, RoutesDataset, SimpleMLPRegression, initialize_database_if_needed
@@ -18,6 +13,7 @@ RANDOM_SEED = 42  # Add a random seed for reproducibility
 
 # Hugging Face related imports (add these)
 from transformers import Trainer, TrainingArguments
+
 
 def load_and_preprocess_data():
     """Load and preprocess data."""
@@ -55,7 +51,8 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
     """Train and evaluate the model using Hugging Face Trainer."""
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = SimpleMLPRegression(routes.shape[1]).to(device).double() # Use routes shape here
+    print(f"""Input size: {routes.shape[1]}""")
+    model = SimpleMLPRegression(routes.shape[1]).to(device) # Use routes shape here
 
     # Training arguments for Hugging Face Trainer
     training_args = TrainingArguments(
@@ -65,13 +62,12 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
         per_device_eval_batch_size=BATCH_SIZE,   # Batch size for evaluation
         learning_rate=LEARNING_RATE,      # Learning rate
         weight_decay=0.01,                # Weight decay (L2 regularization) - optional
-        evaluation_strategy="epoch",      # Evaluation strategy
+        eval_strategy="epoch",            # Evaluation strategy
         save_strategy="epoch",            # Save checkpoints every epoch
         load_best_model_at_end=True,      # Load the best model after training
         metric_for_best_model="eval_loss", # Metric to determine best model
         seed=RANDOM_SEED,                 # Set random seed for reproducibility
-        # Add more arguments as needed (e.g., logging, reporting)
-
+        remove_unused_columns=False
     )
 
     # Define a custom compute_metrics function (highly recommended)
@@ -88,7 +84,7 @@ def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_data
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=test_dataset,
-        compute_metrics=compute_metrics, # Pass the compute_metrics function
+        compute_metrics=compute_metrics,
     )
 
     # Train the model
@@ -113,6 +109,8 @@ if __name__ == "__main__":
     initialize_database_if_needed()
 
     routes, routes_l1 = load_and_preprocess_data()
+    print(f"""Loaded {len(routes)} routes and {len(routes_l1)} boulder problems""")
+    print(f"""Shape of routes: {routes.shape}""")
     train_loader, test_loader, train_dataset, test_dataset = create_datasets_and_loaders(routes, routes_l1)
     trainer = train_and_evaluate_model(train_loader, test_loader, train_dataset, test_dataset, routes)
 
