@@ -3,6 +3,11 @@
 *.sqlite
 *.pypirc
 results/    
+# Machine Learning Model Files
+*.pth
+model_versions/
+my_climbing_model.pth
+my_climbing_model/
 
 # Virtualenv    
 .venv/
