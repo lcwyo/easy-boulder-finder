@@ -13,7 +13,16 @@ N_TOP_DIFFERENCES = 20
 MIN_ASCENTS = 1
 
 def load_and_prepare_model(model_path):
-    # ... (no changes needed)
+    """Load the pretrained model from the given path."""
+    if not os.path.exists(model_path):
+        print(f"Error: Model file at {model_path} not found.")
+        sys.exit(1)  # Exit the program with an error status.
+
+    model = SimpleMLPRegression(1787)  # Assuming 'SimpleMLPRegression' is defined in 'utils'
+    model.load_state_dict(torch.load(model_path))
+    model.eval()
+    print("Model loaded successfully.")
+    return model
 
 def preprocess_and_extract_features():
     """Load, preprocess data, and extract features."""
@@ -44,14 +53,34 @@ def preprocess_and_extract_features():
     return routes, routes_l1, routes_df, grade_comparision
 
 def prepare_features_for_model(routes, routes_l1):
-    # ... (no changes needed)
+    """Prepare and scale features for model input."""
+    print("Preparing features")
+    N, H, W = routes.shape
+    features = np.hstack([routes.reshape(N, -1), routes_l1['angle'].values.reshape(-1, 1)])
+    scaler = StandardScaler()
+    features = scaler.fit_transform(features)
+    return torch.tensor(features, dtype=torch.float), routes_l1['uuid']
+
 
 def make_predictions(model, features, actual_values):
-    # ... (no changes needed)
+    """Make predictions using the model and compare with actual values."""
+    print("Making Predictions")
+    with torch.no_grad():  # Disable gradient computation
+        predictions = model(features).squeeze()
+    differences = (actual_values - predictions)
+    return predictions, differences
 
 def display_top_differences(differences, uuids, actual_values, predictions, routes_df, grade_comparision, N=N_TOP_DIFFERENCES):
-    # ... (no changes needed)
-
+    """Display top N differences between actual and predicted values."""
+    differences_np = differences.cpu().numpy()
+    top_indices = np.argsort(differences_np)[-N:]
+    print(f"Top {N} datapoints with the biggest prediction differences:")
+    for rank, index in enumerate(reversed(top_indices), start=1):
+        uuid = uuids[index]
+        print(f"\nRank {rank}, Datapoint {index}, UUID: {uuid}")
+        print(f"Actual: {actual_values[index].item():.2f} ({grade_comparision[math.floor(actual_values[index].item())]}), Predicted: {predictions[index].item():.2f} ({grade_comparision[math.floor(predictions[index].item())]}), Difference: {differences[index].item():.2f}")
+        subset = routes_df[routes_df['uuid'] == uuid][['setter_username', 'name']]
+        print(subset.to_string(index=False))
 def main():
     initialize_database_if_needed()
 

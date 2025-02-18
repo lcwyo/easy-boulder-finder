@@ -16,13 +16,47 @@ MIN_ASCENTS = 1
 SIZE = (177, 185)
 
 def initialize_database_if_needed(db_path=DB_PATH):
-    # ... (no changes needed)
+    """Check if the database exists and initialize it if it doesn't."""
+    if not os.path.exists(db_path):
+        print(f"Database at {db_path} not found. Initializing database...")
+        # Run the command to initialize the database
+        command = f"python3 -m boardlib database kilter {db_path}"
+        subprocess.run(command, shell=True, check=True)
+        print("Database initialized.")
+
 
 def load_data_from_db():
-    # ... (no changes needed)
+    """Load and merge data from SQLite database."""
+    sql = """
+    SELECT placements.id, holes.x, holes.y
+    FROM holes
+    INNER JOIN placements ON placements.hole_id = holes.id
+    WHERE placements.layout_id = ?
+    """
+    
+    with sqlite3.connect(DB_PATH) as conn:
+        holes_df = pd.read_sql_query(sql, conn, params=(LAYOUT_ID,))
+        routes_df = pd.read_sql_query("SELECT * FROM climbs", conn)
+        routes_grade_df = pd.read_sql_query("SELECT * FROM climb_stats", conn)
+        grade_comparision_df = pd.read_sql_query("SELECT * FROM difficulty_grades", conn)
 
-def preprocess_data(routes_df, routes_grade_df, min_ascents=MIN_ASCENTS):
-    # ... (no changes needed)
+    
+    return holes_df, routes_df, routes_grade_df, grade_comparision_df
+
+
+def preprocess_data(routes_df, routes_grade_df, min_ascents = MIN_ASCENTS):
+    """Filter and merge data based on ascents and layout."""
+    routes_grade_df = routes_grade_df[routes_grade_df['ascensionist_count'] >= min_ascents]
+    routes_l1 = routes_df[routes_df['layout_id'] == 1][['uuid', 'frames']]
+    diffs = routes_grade_df[['climb_uuid', 'angle', 'difficulty_average']]
+    diffs = diffs.copy()
+    diffs.rename(columns={"climb_uuid": "uuid"}, inplace=True)
+
+    routes_l1 = routes_l1[~routes_l1['frames'].str.contains('x', na=False)]
+    routes_l1 = routes_l1.merge(diffs, on='uuid', how='inner')
+
+    return routes_l1
+
 
 def get_features(routes_l1, holes_df, size=(177, 185)):
     """Generate feature matrix from route frames and hole positions."""
@@ -71,7 +105,16 @@ def get_features(routes_l1, holes_df, size=(177, 185)):
 
 
 class SimpleMLPRegression(nn.Module):
-    # ... (no changes needed)
+    def __init__(self, input_size):
+        super().__init__()
+        self.fc1 = nn.Linear(input_size, 516)
+        self.fc2 = nn.Linear(516, 256)
+        self.fc3 = nn.Linear(256, 1)
+    
+    def forward(self, x):
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        return self.fc3(x)
 
 class RoutesDataset(Dataset):
     def __init__(self, features, labels, angle):
