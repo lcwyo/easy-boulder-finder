@@ -4,5 +4,4 @@ tqdm
 matplotlib
 pandas
 scikit-learn  # Add scikit-learn if you use it in compute_metrics
-sqlite3
 boardlib
