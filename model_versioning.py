@@ -194,7 +194,7 @@ def main():
     else:
         print("No retraining needed at this time.")
         latest_model = version_manager.get_latest_model()
-        print("Using latest model.")
+        print(f"""Using latest model: {latest_model}""")
 
 if __name__ == "__main__":
     main()

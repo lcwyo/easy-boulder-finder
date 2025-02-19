@@ -65,7 +65,7 @@ def main():
         # Prepare input tensor
         input_tensor = prepare_features(routes[:10])
         labels = torch.tensor(routes_data['difficulty_average'][:10].values, dtype=torch.float32)
-        
+        print(f"Labels: {labels}")
         print("\n--- Input Tensor Diagnostics ---")
         print(f"Input tensor shape: {input_tensor.shape}")
         print(f"Input tensor dtype: {input_tensor.dtype}")
