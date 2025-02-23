@@ -1,24 +1,23 @@
 import torch
-from torch.utils.data import DataLoader, random_split
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import Dataset, DataLoader, random_split
+from tqdm import tqdm
+import matplotlib.pyplot as plt
 
-# Import utility functions from a separate module (ensure these are well-defined)
-from utils import load_data_from_db, preprocess_data, get_features, RoutesDataset, SimpleMLPRegression, ClimbingModelConfig, initialize_database_if_needed
+# Import utility functions from a separate module
+from utils import load_data_from_db, preprocess_data, get_features, RoutesDataset, SimpleMLPRegression, initialize_database_if_needed
 
-# Constants (make these configurable via command-line arguments or config file)
+# Constants
 BATCH_SIZE = 128
 NUM_EPOCHS = 10
 LEARNING_RATE = 0.001
-MIN_ASCENTS = 2
-RANDOM_SEED = 42  # Add a random seed for reproducibility
-
-# Hugging Face related imports (add these)
-from transformers import Trainer, TrainingArguments
-
+MIN_ASCENTS = 5 # needs this many ascents to boulder to be included
 
 def load_and_preprocess_data():
     """Load and preprocess data."""
     print("Loading data")
-    holes_df, routes_df, routes_grade_df, _ = load_data_from_db()  # Assuming this returns pandas DataFrames
+    holes_df, routes_df, routes_grade_df, _ = load_data_from_db()
     print("Data Loaded")
 
     print("Preprocessing data")
@@ -26,106 +25,114 @@ def load_and_preprocess_data():
     print(f"Data preprocessed, {len(routes_l1)} boulder problems")
 
     print("Extracting features")
-    routes = get_features(routes_l1, holes_df)  # Assuming this returns a NumPy array or PyTorch tensor
+    routes = get_features(routes_l1, holes_df)
     print(f"Features extracted. Got {routes.shape} features")
 
     return routes, routes_l1
 
 def create_datasets_and_loaders(routes, routes_l1):
     """Create datasets and dataloaders."""
-    print("Routes shape:", routes.shape)
-    print("Routes flattened shape:", routes.reshape(routes.shape[0], -1).shape)
-    print("Routes_l1 length:", len(routes_l1))
-    print("Routes_l1 columns:", list(routes_l1.columns))
-
     print("Creating dataset")
     full_dataset = RoutesDataset(routes, routes_l1['difficulty_average'].values, routes_l1['angle'].values)
 
-    # Splitting the dataset with a random seed
+    # Splitting the dataset
     train_size = int(0.8 * len(full_dataset))
     test_size = len(full_dataset) - train_size
-    train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size], generator=torch.Generator().manual_seed(RANDOM_SEED))
+    train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size])
 
     print("Creating dataloaders")
     train_loader = DataLoader(dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True)
     test_loader = DataLoader(dataset=test_dataset, batch_size=BATCH_SIZE, shuffle=False)
 
-    return train_loader, test_loader, train_dataset, test_dataset # Return the datasets as well
+    return train_loader, test_loader
 
-def train_and_evaluate_model(train_loader, test_loader, train_dataset, test_dataset, routes): # Added datasets and routes
-    """Train and evaluate the model using Hugging Face Trainer."""
+def train_and_evaluate_model(train_loader, test_loader):
+    """Train and evaluate the model."""
+        
+    data_iterator = iter(train_loader)
+    images, _ = next(data_iterator)
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    print(f"""Input size: {routes.shape[1]}""")
+    model = SimpleMLPRegression(images.shape[-1]).to(device).double()  # Convert model to double precision
 
-    # Create a configuration for the model
-    config = ClimbingModelConfig(input_size=routes.shape[1])
-    model = SimpleMLPRegression(config).to(device)
+    criterion = nn.MSELoss()
+    optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
-    # Training arguments for Hugging Face Trainer
-    training_args = TrainingArguments(
-        output_dir="./results",          # Output directory for checkpoints and logs
-        num_train_epochs=NUM_EPOCHS,      # Number of training epochs
-        per_device_train_batch_size=BATCH_SIZE,  # Batch size per device during training
-        per_device_eval_batch_size=BATCH_SIZE,   # Batch size for evaluation
-        learning_rate=LEARNING_RATE,      # Learning rate
-        weight_decay=0.01,                # Weight decay (L2 regularization) - optional
-        eval_strategy="epoch",            # Evaluation strategy
-        save_strategy="epoch",            # Save checkpoints every epoch
-        load_best_model_at_end=True,      # Load the best model after training
-        metric_for_best_model="eval_loss", # Metric to determine best model
-        seed=RANDOM_SEED,                 # Set random seed for reproducibility
-        remove_unused_columns=False
-    )
+    test_losses, train_losses = [], []
 
-    # Define a custom compute_metrics function
-    def compute_metrics(eval_pred):
-        predictions, labels = eval_pred.predictions, eval_pred.label_ids
-        mse = ((predictions.squeeze() - labels)**2).mean()
-        return {"mse": mse}
+    print("Starting training")
+    for epoch in range(NUM_EPOCHS):
+        train_loss = train_one_epoch(model, train_loader, criterion, optimizer, epoch, device)
+        test_loss = evaluate(model, test_loader, criterion, device)
 
-    # Initialize the Trainer
-    trainer = Trainer(
-        model=model,
-        args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=test_dataset,
-        compute_metrics=compute_metrics,
-        data_collator=lambda features: {
-            "input_ids": torch.stack([f["input_ids"] for f in features]),
-            "labels": torch.tensor([f["labels"] for f in features])
-        }
-    )
+        test_losses.append(test_loss)
+        train_losses.append(train_loss)
 
-    # Train the model
-    trainer.train()
+        print(f'Epoch [{epoch+1}/{NUM_EPOCHS}], Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}')
 
-    # Save the best model in Hugging Face format
-    trainer.save_model("./my_climbing_model")
-    print("Model saved successfully to ./my_climbing_model")
+    save_model(model, "model.pth")
+    plot_losses(train_losses, test_losses)
 
-    # Evaluate the model
-    metrics = trainer.evaluate()
-    print(metrics)
+def train_one_epoch(model, train_loader, criterion, optimizer, epoch, device):
+    """Train the model for one epoch."""
+    model.train()
+    train_loss = 0.0
+    progress_bar = tqdm(enumerate(train_loader), total=len(train_loader), desc=f'Epoch {epoch + 1}/{NUM_EPOCHS}')
 
-    return trainer # return the trainer object
+    for i, (images, labels) in progress_bar:
+        images, labels = images.to(device), labels.to(device)
+        optimizer.zero_grad()
+
+        outputs = model(images).squeeze()
+        loss = criterion(outputs, labels)
+
+        loss.backward()
+        optimizer.step()
+
+        train_loss += loss.item() * images.size(0)
+        progress_bar.set_postfix({'Train Loss': loss.item()})
+
+    train_loss /= len(train_loader.dataset)
+    return train_loss
+
+def evaluate(model, test_loader, criterion, device):
+    """Evaluate the model."""
+    model.eval()
+    test_loss = 0.0
+    with torch.no_grad():
+        for images, labels in test_loader:
+            images, labels = images.to(device), labels.to(device)
+            outputs = model(images).squeeze()
+            loss = criterion(outputs, labels)
+            test_loss += loss.item()*images.size(0)
+    test_loss /= len(test_loader.dataset)
+
+    return test_loss
+
+def save_model(model, model_path):
+    """Save the trained model to a file."""
+    torch.save(model.state_dict(), model_path)
+    print(f"Model saved to {model_path}")
+
+def plot_losses(train_losses, test_losses):
+    """Plot training and testing losses over epochs."""
+    epochs = range(1, len(train_losses) + 1)
 
 
-# ... (save_model and plot_losses can be removed or adapted if you use Trainer's built-in functionalities)
+    plt.figure(figsize=(10, 6))
+    plt.plot(epochs, train_losses, label='Training Loss')
+    plt.plot(epochs, test_losses, color='red', label='Testing Loss')
+
+    plt.title('Training and Testing Losses Over Epochs')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+
+    plt.show()
 
 if __name__ == "__main__":
     initialize_database_if_needed()
 
     routes, routes_l1 = load_and_preprocess_data()
-    print(f"""Loaded {len(routes)} routes and {len(routes_l1)} boulder problems""")
-    print(f"""Shape of routes: {routes.shape}""")
-    train_loader, test_loader, train_dataset, test_dataset = create_datasets_and_loaders(routes, routes_l1)
-    trainer = train_and_evaluate_model(train_loader, test_loader, train_dataset, test_dataset, routes)
-
-    # Example of how to access the best model
-    best_model = trainer.model
-    # You can now use best_model for inference or save it in a different format (e.g., ONNX)
-
-    # Example: Save the model in PyTorch format
-    torch.save(best_model.state_dict(), "./my_climbing_model.pth")
-    print("Model saved successfully to ./my_climbing_model.pth")
+    train_loader, test_loader = create_datasets_and_loaders(routes, routes_l1)
+    train_and_evaluate_model(train_loader, test_loader)

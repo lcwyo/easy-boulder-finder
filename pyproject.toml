@@ -10,6 +10,7 @@ dependencies = [
     "matplotlib>=3.10.0",
     "pandas>=2.2.3",
     "pyright>=1.1.394",
+    "pytest>=8.3.4",
     "ruff>=0.9.6",
     "scikit-learn>=1.6.1",
     "torch>=2.6.0",

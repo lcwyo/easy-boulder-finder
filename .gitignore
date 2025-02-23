@@ -9,6 +9,11 @@ model_versions/
 my_climbing_model.pth
 my_climbing_model/
 
+.cursor/
+.cursorrules
+RULESFORAI.md
+
+test_results/
 # Virtualenv    
 .venv/
 env/
