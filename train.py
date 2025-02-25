@@ -10,7 +10,8 @@ import pandas as pd
 import math
 from dataclasses import dataclass
 from pathlib import Path
-from logging import getLogger
+from loguru import logger
+import sys
 
 # Import utility functions from a separate module
 from utils import (
@@ -22,7 +23,11 @@ from utils import (
     initialize_database_if_needed,
 )
 
-logger = getLogger(__name__)
+
+#logger.remove()  # Remove the default handler.
+#logger.add(sys.stderr, colorize=True, backtrace=True, diagnose=True)  # Force ANSI sequences in output.
+
+logger.add("file.log", level="INFO", rotation="500 MB")  # Also log to a file, rotating every 500 MB.
 
 # Constants
 BATCH_SIZE = 128
@@ -33,24 +38,24 @@ MIN_ASCENTS = 5  # needs this many ascents to boulder to be included
 
 def load_and_preprocess_data():
     """Load and preprocess data."""
-    print("Loading data")
+    logger.info("Loading data")
     holes_df, routes_df, routes_grade_df, _ = load_data_from_db()
-    print("Data Loaded")
+    logger.info("Data Loaded")
 
-    print("Preprocessing data")
+    logger.info("Preprocessing data")
     routes_l1 = preprocess_data(routes_df, routes_grade_df, min_ascents=MIN_ASCENTS)
-    print(f"Data preprocessed, {len(routes_l1)} boulder problems")
+    logger.info(f"Data preprocessed, {len(routes_l1)} boulder problems")
 
-    print("Extracting features")
+    logger.info("Extracting features")
     routes = get_features(routes_l1, holes_df)
-    print(f"Features extracted. Got {routes.shape} features")
+    logger.info(f"Features extracted. Got {routes.shape} features")
 
     return routes, routes_l1
 
 
 def create_datasets_and_loaders(routes, routes_l1):
     """Create datasets and dataloaders."""
-    print("Creating dataset")
+    logger.info("Creating dataset")
     full_dataset = RoutesDataset(
         routes, routes_l1["difficulty_average"].values, routes_l1["angle"].values
     )
@@ -60,7 +65,7 @@ def create_datasets_and_loaders(routes, routes_l1):
     test_size = len(full_dataset) - train_size
     train_dataset, test_dataset = random_split(full_dataset, [train_size, test_size])
 
-    print("Creating dataloaders")
+    logger.info("Creating dataloaders")
     train_loader = DataLoader(
         dataset=train_dataset, batch_size=BATCH_SIZE, shuffle=True
     )
@@ -85,7 +90,7 @@ def train_and_evaluate_model(train_loader, test_loader):
 
     test_losses, train_losses = [], []
 
-    print("Starting training")
+    logger.info("Starting training")
     for epoch in range(NUM_EPOCHS):
         train_loss = train_one_epoch(
             model, train_loader, criterion, optimizer, epoch, device
@@ -95,7 +100,7 @@ def train_and_evaluate_model(train_loader, test_loader):
         test_losses.append(test_loss)
         train_losses.append(train_loss)
 
-        print(
+        logger.info(
             f"Epoch [{epoch + 1}/{NUM_EPOCHS}], Train Loss: {train_loss:.4f}, Test Loss: {test_loss:.4f}"
         )
 
@@ -148,7 +153,7 @@ def evaluate(model, test_loader, criterion, device):
 def save_model(model, model_path):
     """Save the trained model to a file."""
     torch.save(model.state_dict(), model_path)
-    print(f"Model saved to {model_path}")
+    logger.info(f"Model saved to {model_path}")
 
 
 def plot_losses(train_losses, test_losses):

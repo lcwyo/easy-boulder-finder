@@ -7,6 +7,7 @@ import math
 from typing import Dict, List, Tuple
 import pandas as pd
 from dataclasses import dataclass
+from loguru import logger
 
 from utils import (
     load_data_from_db,
@@ -125,7 +126,7 @@ class PredictionAnalyzer:
 def load_and_prepare_model(model_path):
     """Load the pretrained model from the given path."""
     if not os.path.exists(model_path):
-        print(f"Error: Model file at {model_path} not found.")
+        logger.error(f"Error: Model file at {model_path} not found.")
         sys.exit(1)  # Exit the program with an error status.
 
     model = SimpleMLPRegression(
@@ -133,13 +134,13 @@ def load_and_prepare_model(model_path):
     )  # Assuming 'SimpleMLPRegression' is defined in 'utils'
     model.load_state_dict(torch.load(model_path))
     model.eval()
-    print("Model loaded successfully.")
+    logger.info("Model loaded successfully.")
     return model
 
 
 def preprocess_and_extract_features():
     """Load, preprocess data, and extract features."""
-    print("Loading data")
+    logger.info("Loading data")
     holes_df, routes_df, routes_grade_df, grade_comparision_df = load_data_from_db()
     grade_comparision = grade_comparision_df.set_index("difficulty")[
         "boulder_name"
@@ -147,26 +148,26 @@ def preprocess_and_extract_features():
     print("Data Loaded")
 
     # Only include boulders that are publicly listed in app
-    print(
+    logger.info(
         f"Excluding boulders that are not publicly listed, size before: {len(routes_df)}"
     )
     routes_df = routes_df[routes_df["is_listed"] == 1]
-    print(f"Size after: {len(routes_df)}")
+    logger.info(f"Size after: {len(routes_df)}")
 
-    print("Preprocessing data")
+    logger.info("Preprocessing data")
     routes_l1 = preprocess_data(routes_df, routes_grade_df, min_ascents=MIN_ASCENTS)
-    print(f"Data preprocessed, {len(routes_l1)} boulder problems")
+    logger.info(f"Data preprocessed, {len(routes_l1)} boulder problems")
 
-    print("Extracting features")
+    logger.info("Extracting features")
     routes = get_features(routes_l1, holes_df)
-    print(f"Features extracted. Got {routes.shape} features")
+    logger.info(f"Features extracted. Got {routes.shape} features")
 
     return routes, routes_l1, routes_df, grade_comparision
 
 
 def prepare_features_for_model(routes, routes_l1):
     """Prepare and scale features for model input."""
-    print("Preparing features")
+    logger.info("Preparing features")
     N, _, _ = routes.shape
     features = np.hstack(
         [routes.reshape(N, -1), routes_l1["angle"].values.reshape(-1, 1)]
@@ -178,7 +179,7 @@ def prepare_features_for_model(routes, routes_l1):
 
 def make_predictions(model, features, actual_values):
     """Make predictions using the model and compare with actual values."""
-    print("Making Predictions")
+    logger.info("Making Predictions")
     with torch.no_grad():  # Disable gradient computation
         predictions = model(features).squeeze()
     differences = actual_values - predictions
@@ -197,7 +198,7 @@ def display_top_differences(
     """Display top N differences between actual and predicted values."""
     differences_np = differences.cpu().numpy()
     top_indices = np.argsort(differences_np)[-N:]
-    print(grade_comparision, predictions[637])
+    logger.info(grade_comparision, predictions[637])
     print(f"Top {N} datapoints with the biggest prediction differences:")
     for rank, index in enumerate(reversed(top_indices), start=1):
         uuid = uuids[index]
