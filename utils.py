@@ -18,6 +18,9 @@ from dataclasses import dataclass
 from logging import getLogger
 from datetime import datetime
 
+from loguru import logger
+
+
 # Constants
 DB_PATH = "kilter_data.db"
 LAYOUT_ID = 1
@@ -232,11 +235,11 @@ class ModelTrainer:
 def initialize_database_if_needed(db_path=DB_PATH):
     """Check if the database exists and initialize it if it doesn't."""
     if not os.path.exists(db_path):
-        print(f"Database at {db_path} not found. Initializing database...")
+        logger.info(f"Database at {db_path} not found. Initializing database...")
         # Run the command to initialize the database
         command = f"python3 -m boardlib database kilter {db_path}"
         subprocess.run(command, shell=True, check=True)
-        print("Database initialized.")
+        logger.info("Database initialized.")
 
 
 def load_data_from_db():
@@ -303,7 +306,7 @@ def get_features(routes_l1, holes_df, size=(177, 185)):
                     routes_matrix[i, size[0] - y, x] = hold_type
                     routes_occupied[size[0] - y, x] = 1
             except ValueError as e:
-                print(f"Error parsing hold string '{hold_str}' in route {i}: {e}")
+                logger.error(f"Error parsing hold string '{hold_str}' in route {i}: {e}")
 
     # Identify non-empty rows and columns to reduce matrix size
     non_empty_rows = np.any(routes_occupied, axis=1)
